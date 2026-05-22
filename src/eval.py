@@ -2,6 +2,7 @@ import argparse
 import os
 import torch
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torchvision.models import resnet18
@@ -38,6 +39,34 @@ def sample_images(field, denoiser, diff, ckpt, n, h, w, device):
         img = field.render(coeff, h, w)
     return img
 
+
+
+
+def save_sample_grid(images: torch.Tensor, out_path: str, n_show: int = 16, title: str = ""):
+    imgs = images[:n_show, 0].detach().cpu()
+    cols = int(n_show ** 0.5)
+    rows = (n_show + cols - 1) // cols
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 2, rows * 2))
+    if rows == 1 and cols == 1:
+        axes = [[axes]]
+    elif rows == 1:
+        axes = [axes]
+    elif cols == 1:
+        axes = [[ax] for ax in axes]
+
+    idx = 0
+    for r in range(rows):
+        for c in range(cols):
+            ax = axes[r][c]
+            if idx < imgs.shape[0]:
+                ax.imshow(imgs[idx], cmap="gray", vmin=0, vmax=1)
+            ax.axis("off")
+            idx += 1
+    if title:
+        fig.suptitle(title)
+    plt.tight_layout()
+    fig.savefig(out_path)
+    plt.close(fig)
 
 def train_mnist_classifier(device: str, epochs: int = 2, batch_size: int = 256):
     tf = transforms.Compose([transforms.ToTensor()])
@@ -110,6 +139,7 @@ def main():
     rows = []
     for s in all_sizes:
         imgs = sample_images(field, denoiser, diff, ckpt, args.num_samples, s, s, args.device)
+        save_sample_grid(imgs, os.path.join(args.outdir, f"samples_size_{s}.png"), n_show=16, title=f"Generated samples @ {s}x{s}")
         if s != 28:
             imgs_for_clf = F.interpolate(imgs, size=(28, 28), mode="bilinear", align_corners=False)
         else:
@@ -131,7 +161,8 @@ def main():
             f.write(f"size={r['size']} mean_confidence={r['mean_confidence']:.6f} label_entropy={r['label_entropy']:.6f}\n")
             f.write("label_hist=" + ",".join([f"{x:.6f}" for x in r["label_hist"]]) + "\n")
 
-    print("[eval] saved:", out_path)
+    print("[eval] saved metrics:", out_path)
+    print("[eval] saved sample grids:", os.path.join(args.outdir, "samples_size_*.png"))
 
 
 if __name__ == "__main__":
