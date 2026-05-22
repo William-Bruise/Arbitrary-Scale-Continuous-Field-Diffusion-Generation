@@ -23,17 +23,6 @@ def save_multires(field, coeff, out_path, sizes=(28, 42, 56, 84)):
     plt.close(fig)
 
 
-def grid_tv_smooth(coeffs: torch.Tensor) -> torch.Tensor:
-    # coeffs: [B, K], K should be perfect square
-    b, k = coeffs.shape
-    side = int(math.sqrt(k))
-    assert side * side == k, "num_basis must be a perfect square for 2D TV smooth"
-    grid = coeffs.reshape(b, side, side)
-    dh = (grid[:, 1:, :] - grid[:, :-1, :]).pow(2).mean()
-    dw = (grid[:, :, 1:] - grid[:, :, :-1]).pow(2).mean()
-    return dh + dw
-
-
 def estimate_coeff_stats(field, dl, device: str, max_batches: int = 100):
     """Estimate dataset-level coeff mean/std for normalization."""
     sums = None
@@ -73,7 +62,6 @@ def main():
     p.add_argument("--num-workers", type=int, default=2)
     p.add_argument("--hidden", type=int, default=512, help="denoiser hidden dim")
     p.add_argument("--depth", type=int, default=4, help="denoiser depth (hidden blocks)")
-    p.add_argument("--smooth-weight", type=float, default=1e-5, help="weight for 2D TV smooth prior on coeff grid")
     p.add_argument("--normalize-coeffs", action="store_true", help="z-score normalize coefficients before diffusion")
     p.add_argument("--stats-batches", type=int, default=100, help="batches used to estimate coeff mean/std")
     args = p.parse_args()
@@ -116,8 +104,7 @@ def main():
 
             pred = model(x_t, t)
             loss_ddpm = ((pred - noise) ** 2).mean()
-            smooth = grid_tv_smooth(coeffs)
-            loss = loss_ddpm + args.smooth_weight * smooth
+            loss = loss_ddpm
 
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -127,7 +114,7 @@ def main():
             if global_step % 50 == 0 or global_step == 1:
                 msg = (
                     f"epoch={epoch}/{args.epochs} step={global_step} "
-                    f"loss={loss.item():.6f} ddpm={loss_ddpm.item():.6f} smooth={smooth.item():.6f} "
+                    f"loss={loss.item():.6f} ddpm={loss_ddpm.item():.6f} "
                     f"coeffs={tuple(coeffs_train.shape)} x_t={tuple(x_t.shape)}"
                 )
                 print(msg)
