@@ -56,6 +56,7 @@ class LatentUNetDenoiser(nn.Module):
 
         self.upsample = nn.ConvTranspose2d(base * 2, base, 4, stride=2, padding=1)
         self.up1 = ResBlock(base * 2, tdim)
+        self.up_reduce = nn.Conv2d(base * 2, base, 1)
         self.out_norm = nn.GroupNorm(8, base)
         self.out_conv = nn.Conv2d(base, 1, 3, padding=1)
         self.act = nn.SiLU()
@@ -77,6 +78,7 @@ class LatentUNetDenoiser(nn.Module):
             xu = torch.nn.functional.interpolate(xu, size=x1.shape[-2:], mode="nearest")
         xu = torch.cat([xu, x1], dim=1)
         xu = self.up1(xu, temb)
+        xu = self.up_reduce(xu)
 
         out = self.out_conv(self.act(self.out_norm(xu)))
         return out.reshape(b, self.k)
