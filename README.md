@@ -16,50 +16,25 @@
 
 > 这不是超分辨：没有 LR 输入，也没有 fixed-scale 图先生成再 resize。
 
-## 目录结构
-
-- `src/dataset.py`：MNIST 自动下载与坐标域工具
-- `src/continuous_field.py`：连续 Gaussian field 表示与渲染
-- `src/diffusion.py`：DDPM（作用于 field coefficients）
-- `src/model.py`：time-conditioned MLP 去噪器
-- `src/train.py`：完整训练入口（按 epoch 训练，保存 ckpt、日志、多分辨率样本）
-- `src/sample.py`：采样入口（随机噪声 -> coefficients -> 多分辨率渲染）
-- `src/smoke_test.py`：快速连通性测试
-
-## 安装
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install torch torchvision matplotlib pillow
-```
-
-## Smoke Test
-
-```bash
-python -m src.smoke_test
-```
-
 ## 完整训练（推荐）
 
 ```bash
 python -m src.train \
-  --epochs 10 \
+  --epochs 100 \
   --batch-size 128 \
   --timesteps 200 \
   --num-basis 64 \
+  --smooth-weight 1e-5 \
+  --normalize-coeffs \
   --sample-every 500 \
   --ckpt-every 1000 \
   --outdir runs/full_train
 ```
 
-训练会：
-- 自动下载 MNIST 到 `./data`
-- 打印关键 tensor shape 与训练状态
-- 保存：
-  - `runs/full_train/checkpoints/step_*.pt` 与 `final.pt`
-  - `runs/full_train/samples/step_*_multires.png` 与 `final_multires.png`
-  - `runs/full_train/logs/train_log.txt`
+关键新增参数：
+- `--smooth-weight`: 2D TV 系数平滑正则权重（默认 `1e-5`）
+- `--normalize-coeffs`: 训练前估计系数均值方差并做 z-score
+- `--stats-batches`: 估计系数统计量的 batch 数（默认 `100`）
 
 ## 采样
 
@@ -67,13 +42,4 @@ python -m src.train \
 python -m src.sample --ckpt runs/full_train/checkpoints/final.pt --outdir runs/full_train/sample_eval
 ```
 
-会生成同一个样本在多分辨率下的拼图，检查跨尺度一致性。
-
-## GaussianSR 借鉴边界
-
-理论上借鉴的是：
-- continuous Gaussian field 参数化思想
-- arbitrary-resolution query/render 接口
-- query 再聚合的渲染数据流
-
-本仓库**没有**复现 GaussianSR 的超分辨任务设置。
+如果 checkpoint 中包含系数标准化统计量，采样时会自动反标准化后再渲染。

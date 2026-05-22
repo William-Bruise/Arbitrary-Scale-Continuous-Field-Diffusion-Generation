@@ -1,5 +1,6 @@
 import argparse
 import os
+import math
 import torch
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
@@ -22,6 +23,41 @@ def save_multires(field, coeff, out_path, sizes=(28, 42, 56, 84)):
     plt.close(fig)
 
 
+def grid_tv_smooth(coeffs: torch.Tensor) -> torch.Tensor:
+    # coeffs: [B, K], K should be perfect square
+    b, k = coeffs.shape
+    side = int(math.sqrt(k))
+    assert side * side == k, "num_basis must be a perfect square for 2D TV smooth"
+    grid = coeffs.reshape(b, side, side)
+    dh = (grid[:, 1:, :] - grid[:, :-1, :]).pow(2).mean()
+    dw = (grid[:, :, 1:] - grid[:, :, :-1]).pow(2).mean()
+    return dh + dw
+
+
+def estimate_coeff_stats(field, dl, device: str, max_batches: int = 100):
+    """Estimate dataset-level coeff mean/std for normalization."""
+    sums = None
+    sq_sums = None
+    count = 0
+    with torch.no_grad():
+        for bi, (x, _) in enumerate(dl):
+            if bi >= max_batches:
+                break
+            x = x.to(device)
+            coeffs = fit_coeffs_to_image(field, x)  # [B,K]
+            if sums is None:
+                sums = coeffs.sum(dim=0)
+                sq_sums = (coeffs**2).sum(dim=0)
+            else:
+                sums += coeffs.sum(dim=0)
+                sq_sums += (coeffs**2).sum(dim=0)
+            count += coeffs.shape[0]
+    mean = sums / max(count, 1)
+    var = sq_sums / max(count, 1) - mean**2
+    std = torch.sqrt(var.clamp_min(1e-8))
+    return mean, std
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--epochs", type=int, default=10, help="full training epochs")
@@ -34,6 +70,9 @@ def main():
     p.add_argument("--sample-every", type=int, default=500, help="sample every N optimization steps")
     p.add_argument("--ckpt-every", type=int, default=1000, help="checkpoint every N optimization steps")
     p.add_argument("--num-workers", type=int, default=2)
+    p.add_argument("--smooth-weight", type=float, default=1e-5, help="weight for 2D TV smooth prior on coeff grid")
+    p.add_argument("--normalize-coeffs", action="store_true", help="z-score normalize coefficients before diffusion")
+    p.add_argument("--stats-batches", type=int, default=100, help="batches used to estimate coeff mean/std")
     args = p.parse_args()
 
     os.makedirs(f"{args.outdir}/samples", exist_ok=True)
@@ -48,6 +87,13 @@ def main():
     diff = DDPMCoefficients(timesteps=args.timesteps, device=args.device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
+    coeff_mean = torch.zeros(args.num_basis, device=args.device)
+    coeff_std = torch.ones(args.num_basis, device=args.device)
+    if args.normalize_coeffs:
+        coeff_mean, coeff_std = estimate_coeff_stats(field, dl, args.device, max_batches=args.stats_batches)
+        print(f"[coeff-stats] estimated from <= {args.stats_batches} batches")
+        print(f"[coeff-stats] mean(abs)={coeff_mean.abs().mean().item():.4f} std(mean)={coeff_std.mean().item():.4f}")
+
     print("[shape] centers:", field.centers.shape)
     print(f"[train] dataset={len(ds)} batch_size={args.batch_size} steps_per_epoch={len(dl)}")
 
@@ -58,15 +104,17 @@ def main():
         for x, _ in dl:
             x = x.to(args.device)
             coeffs = fit_coeffs_to_image(field, x)
-            b, _ = coeffs.shape
+            coeffs_train = (coeffs - coeff_mean.unsqueeze(0)) / coeff_std.unsqueeze(0) if args.normalize_coeffs else coeffs
+
+            b, _ = coeffs_train.shape
             t = torch.randint(0, args.timesteps, (b,), device=args.device)
-            noise = torch.randn_like(coeffs)
-            x_t = diff.q_sample(coeffs, t, noise)
+            noise = torch.randn_like(coeffs_train)
+            x_t = diff.q_sample(coeffs_train, t, noise)
 
             pred = model(x_t, t)
             loss_ddpm = ((pred - noise) ** 2).mean()
-            smooth = (coeffs[:, 1:] - coeffs[:, :-1]).pow(2).mean()
-            loss = loss_ddpm + 1e-4 * smooth
+            smooth = grid_tv_smooth(coeffs)
+            loss = loss_ddpm + args.smooth_weight * smooth
 
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -77,7 +125,7 @@ def main():
                 msg = (
                     f"epoch={epoch}/{args.epochs} step={global_step} "
                     f"loss={loss.item():.6f} ddpm={loss_ddpm.item():.6f} smooth={smooth.item():.6f} "
-                    f"coeffs={tuple(coeffs.shape)} x_t={tuple(x_t.shape)}"
+                    f"coeffs={tuple(coeffs_train.shape)} x_t={tuple(x_t.shape)}"
                 )
                 print(msg)
                 with open(log_path, "a", encoding="utf-8") as f:
@@ -86,6 +134,8 @@ def main():
             if global_step % args.sample_every == 0:
                 with torch.no_grad():
                     sample_coeff = diff.sample(model, batch_size=1, k=args.num_basis, device=args.device)
+                    if args.normalize_coeffs:
+                        sample_coeff = sample_coeff * coeff_std.unsqueeze(0) + coeff_mean.unsqueeze(0)
                     save_multires(field, sample_coeff, f"{args.outdir}/samples/step_{global_step}_multires.png")
 
             if global_step % args.ckpt_every == 0:
@@ -95,21 +145,28 @@ def main():
                     "steps": global_step,
                     "num_basis": args.num_basis,
                     "timesteps": args.timesteps,
+                    "normalize_coeffs": args.normalize_coeffs,
+                    "coeff_mean": coeff_mean.detach().cpu(),
+                    "coeff_std": coeff_std.detach().cpu(),
                 }
                 torch.save(ckpt, f"{args.outdir}/checkpoints/step_{global_step}.pt")
 
-    # save final
     ckpt = {
         "model": model.state_dict(),
         "epoch": args.epochs,
         "steps": global_step,
         "num_basis": args.num_basis,
         "timesteps": args.timesteps,
+        "normalize_coeffs": args.normalize_coeffs,
+        "coeff_mean": coeff_mean.detach().cpu(),
+        "coeff_std": coeff_std.detach().cpu(),
     }
     torch.save(ckpt, f"{args.outdir}/checkpoints/final.pt")
 
     with torch.no_grad():
         sample_coeff = diff.sample(model, batch_size=1, k=args.num_basis, device=args.device)
+        if args.normalize_coeffs:
+            sample_coeff = sample_coeff * coeff_std.unsqueeze(0) + coeff_mean.unsqueeze(0)
         save_multires(field, sample_coeff, f"{args.outdir}/samples/final_multires.png")
 
     print(f"[done] total_steps={global_step} saved_final={args.outdir}/checkpoints/final.pt")

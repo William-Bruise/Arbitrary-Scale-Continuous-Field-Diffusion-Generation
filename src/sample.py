@@ -38,6 +38,10 @@ def main():
     diff = DDPMCoefficients(timesteps=ckpt["timesteps"], device=args.device)
     with torch.no_grad():
         coeff = diff.sample(model, batch_size=1, k=ckpt["num_basis"], device=args.device)
+        if ckpt.get("normalize_coeffs", False):
+            mean = ckpt["coeff_mean"].to(args.device).unsqueeze(0)
+            std = ckpt["coeff_std"].to(args.device).unsqueeze(0)
+            coeff = coeff * std + mean
     save_multires(field, coeff, f"{args.outdir}/sample_multires.png")
     print("saved:", f"{args.outdir}/sample_multires.png")
 
