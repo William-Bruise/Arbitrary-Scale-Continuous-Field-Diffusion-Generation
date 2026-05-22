@@ -24,14 +24,16 @@ def save_multires(field, coeff, out_path, sizes=(28, 42, 56, 84)):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--steps", type=int, default=200)
-    p.add_argument("--batch-size", type=int, default=32)
-    p.add_argument("--lr", type=float, default=1e-3)
-    p.add_argument("--timesteps", type=int, default=100)
+    p.add_argument("--epochs", type=int, default=10, help="full training epochs")
+    p.add_argument("--batch-size", type=int, default=128)
+    p.add_argument("--lr", type=float, default=2e-4)
+    p.add_argument("--timesteps", type=int, default=200)
     p.add_argument("--num-basis", type=int, default=64)
     p.add_argument("--device", type=str, default="cpu")
-    p.add_argument("--outdir", type=str, default="runs/exp")
-    p.add_argument("--sample-every", type=int, default=1)
+    p.add_argument("--outdir", type=str, default="runs/full_train")
+    p.add_argument("--sample-every", type=int, default=500, help="sample every N optimization steps")
+    p.add_argument("--ckpt-every", type=int, default=1000, help="checkpoint every N optimization steps")
+    p.add_argument("--num-workers", type=int, default=2)
     args = p.parse_args()
 
     os.makedirs(f"{args.outdir}/samples", exist_ok=True)
@@ -39,59 +41,78 @@ def main():
     os.makedirs(f"{args.outdir}/logs", exist_ok=True)
 
     ds = make_mnist_dataset(train=True)
-    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
+    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
 
     field = ContinuousGaussianField(num_basis=args.num_basis, device=args.device).to(args.device)
     model = CoeffDenoiser(k=args.num_basis).to(args.device)
     diff = DDPMCoefficients(timesteps=args.timesteps, device=args.device)
-    opt = torch.optim.Adam(model.parameters(), lr=args.lr)
+    opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     print("[shape] centers:", field.centers.shape)
+    print(f"[train] dataset={len(ds)} batch_size={args.batch_size} steps_per_epoch={len(dl)}")
 
-    step = 0
-    it = iter(dl)
+    global_step = 0
     log_path = f"{args.outdir}/logs/train_log.txt"
-    while step < args.steps:
-        try:
-            x, _ = next(it)
-        except StopIteration:
-            it = iter(dl)
-            x, _ = next(it)
 
-        x = x.to(args.device)
-        coeffs = fit_coeffs_to_image(field, x)
-        b, k = coeffs.shape
-        t = torch.randint(0, args.timesteps, (b,), device=args.device)
-        noise = torch.randn_like(coeffs)
-        x_t = diff.q_sample(coeffs, t, noise)
+    for epoch in range(1, args.epochs + 1):
+        for x, _ in dl:
+            x = x.to(args.device)
+            coeffs = fit_coeffs_to_image(field, x)
+            b, _ = coeffs.shape
+            t = torch.randint(0, args.timesteps, (b,), device=args.device)
+            noise = torch.randn_like(coeffs)
+            x_t = diff.q_sample(coeffs, t, noise)
 
-        pred = model(x_t, t)
-        loss_ddpm = ((pred - noise) ** 2).mean()
-        smooth = (coeffs[:, 1:] - coeffs[:, :-1]).pow(2).mean()
-        loss = loss_ddpm + 1e-4 * smooth
+            pred = model(x_t, t)
+            loss_ddpm = ((pred - noise) ** 2).mean()
+            smooth = (coeffs[:, 1:] - coeffs[:, :-1]).pow(2).mean()
+            loss = loss_ddpm + 1e-4 * smooth
 
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
+            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            opt.step()
 
-        step += 1
-        msg = f"step={step} loss={loss.item():.6f} coeffs={tuple(coeffs.shape)} x_t={tuple(x_t.shape)}"
-        print(msg)
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(msg + "\n")
+            global_step += 1
+            if global_step % 50 == 0 or global_step == 1:
+                msg = (
+                    f"epoch={epoch}/{args.epochs} step={global_step} "
+                    f"loss={loss.item():.6f} ddpm={loss_ddpm.item():.6f} smooth={smooth.item():.6f} "
+                    f"coeffs={tuple(coeffs.shape)} x_t={tuple(x_t.shape)}"
+                )
+                print(msg)
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(msg + "\n")
 
-        if step % args.sample_every == 0:
-            with torch.no_grad():
-                sample_coeff = diff.sample(model, batch_size=1, k=args.num_basis, device=args.device)
-                save_multires(field, sample_coeff, f"{args.outdir}/samples/step_{step}_multires.png")
+            if global_step % args.sample_every == 0:
+                with torch.no_grad():
+                    sample_coeff = diff.sample(model, batch_size=1, k=args.num_basis, device=args.device)
+                    save_multires(field, sample_coeff, f"{args.outdir}/samples/step_{global_step}_multires.png")
 
-            ckpt = {
-                "model": model.state_dict(),
-                "steps": step,
-                "num_basis": args.num_basis,
-                "timesteps": args.timesteps,
-            }
-            torch.save(ckpt, f"{args.outdir}/checkpoints/step_{step}.pt")
+            if global_step % args.ckpt_every == 0:
+                ckpt = {
+                    "model": model.state_dict(),
+                    "epoch": epoch,
+                    "steps": global_step,
+                    "num_basis": args.num_basis,
+                    "timesteps": args.timesteps,
+                }
+                torch.save(ckpt, f"{args.outdir}/checkpoints/step_{global_step}.pt")
+
+    # save final
+    ckpt = {
+        "model": model.state_dict(),
+        "epoch": args.epochs,
+        "steps": global_step,
+        "num_basis": args.num_basis,
+        "timesteps": args.timesteps,
+    }
+    torch.save(ckpt, f"{args.outdir}/checkpoints/final.pt")
+
+    with torch.no_grad():
+        sample_coeff = diff.sample(model, batch_size=1, k=args.num_basis, device=args.device)
+        save_multires(field, sample_coeff, f"{args.outdir}/samples/final_multires.png")
+
+    print(f"[done] total_steps={global_step} saved_final={args.outdir}/checkpoints/final.pt")
 
 
 if __name__ == "__main__":
