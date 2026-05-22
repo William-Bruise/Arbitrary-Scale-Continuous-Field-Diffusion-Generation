@@ -15,9 +15,12 @@ def save_multires(field, coeff, out_path, base_size: int):
     if len(sizes)==1: axes=[axes]
     for ax,im,s in zip(axes,imgs,sizes):
         if im.shape[0]==1:
-            ax.imshow(im[0], cmap='gray', vmin=0, vmax=1)
+            rgb = im.repeat(3,1,1).permute(1,2,0).clamp(0,1)
+        elif im.shape[0]>=3:
+            rgb = im[:3].permute(1,2,0).clamp(0,1)
         else:
-            ax.imshow(im.permute(1,2,0).clamp(0,1))
+            rgb = im[[0,0,0]].permute(1,2,0).clamp(0,1)
+        ax.imshow(rgb)
         ax.set_title(f"{s}x{s}")
         ax.axis('off')
     plt.tight_layout(); fig.savefig(out_path); plt.close(fig)
@@ -37,10 +40,10 @@ def estimate_coeff_stats(field, dl, device, max_batches=100):
 def main():
     p=argparse.ArgumentParser()
     p.add_argument('--dataset',default='mnist'); p.add_argument('--data-root',default='./data'); p.add_argument('--image-size',type=int,default=32)
-    p.add_argument('--epochs',type=int,default=10); p.add_argument('--batch-size',type=int,default=128); p.add_argument('--lr',type=float,default=2e-4)
+    p.add_argument('--epochs',type=int,default=10); p.add_argument('--batch-size',type=int,default=128); p.add_argument('--lr',type=float,default=1e-4)
     p.add_argument('--timesteps',type=int,default=200); p.add_argument('--num-basis',type=int,default=144); p.add_argument('--sigma',type=float,default=0.08)
-    p.add_argument('--device',default='auto', help='auto|cpu|cuda|cuda:0'); p.add_argument('--outdir',default='runs/full_train'); p.add_argument('--sample-every',type=int,default=500)
-    p.add_argument('--ckpt-every',type=int,default=1000); p.add_argument('--num-workers',type=int,default=2); p.add_argument('--unet-base',type=int,default=64)
+    p.add_argument('--device',default='auto', help='auto|cpu|cuda|cuda:0'); p.add_argument('--outdir',default='runs/full_train'); p.add_argument('--sample-every',type=int,default=10000)
+    p.add_argument('--ckpt-every',type=int,default=10000); p.add_argument('--num-workers',type=int,default=2); p.add_argument('--unet-base',type=int,default=64)
     p.add_argument('--normalize-coeffs',action='store_true'); p.add_argument('--stats-batches',type=int,default=100)
     args=p.parse_args()
     if args.device == 'auto':
@@ -65,7 +68,10 @@ def main():
           msg=f"epoch={e}/{args.epochs} step={step} loss={loss.item():.6f} coeffs={tuple(train.shape)} x_t={tuple(x_t.shape)}"; print(msg); open(log,'a').write(msg+'\n')
         if step%args.sample_every==0:
           sc=diff.sample(model,1,channels*args.num_basis,args.device); sc=sc*std.unsqueeze(0)+mean.unsqueeze(0) if args.normalize_coeffs else sc
-          save_multires(field,sc.reshape(1,channels,args.num_basis),f"{args.outdir}/samples/step_{step}_multires.png",base_size=args.image_size)
+          sample_path=f"{args.outdir}/samples/step_{step}_multires_base{args.image_size}_ch{channels}.png"
+          save_multires(field,sc.reshape(1,channels,args.num_basis),sample_path,base_size=args.image_size)
+          with open(f"{args.outdir}/samples/step_{step}_meta.txt","w",encoding="utf-8") as mf:
+            mf.write(f"base_size={args.image_size}\nchannels={channels}\nscales={default_multiscales(args.image_size)}\npath={sample_path}\n")
         if step%args.ckpt_every==0:
           torch.save({'model':model.state_dict(),'epoch':e,'steps':step,'dataset':args.dataset,'image_size':args.image_size,'channels':channels,'num_basis':args.num_basis,'sigma':args.sigma,'unet_base':args.unet_base,'timesteps':args.timesteps,'normalize_coeffs':args.normalize_coeffs,'coeff_mean':mean.cpu(),'coeff_std':std.cpu()},f"{args.outdir}/checkpoints/step_{step}.pt")
     torch.save({'model':model.state_dict(),'epoch':args.epochs,'steps':step,'dataset':args.dataset,'image_size':args.image_size,'channels':channels,'num_basis':args.num_basis,'sigma':args.sigma,'unet_base':args.unet_base,'timesteps':args.timesteps,'normalize_coeffs':args.normalize_coeffs,'coeff_mean':mean.cpu(),'coeff_std':std.cpu()},f"{args.outdir}/checkpoints/final.pt")

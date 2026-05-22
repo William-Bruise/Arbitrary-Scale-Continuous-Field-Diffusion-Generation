@@ -13,9 +13,12 @@ def save_multires(field, coeff, out_path, base_size: int):
     if len(sizes)==1: axes=[axes]
     for ax,im,s in zip(axes,imgs,sizes):
         if im.shape[0]==1:
-            ax.imshow(im[0], cmap='gray', vmin=0, vmax=1)
+            rgb = im.repeat(3,1,1).permute(1,2,0).clamp(0,1)
+        elif im.shape[0]>=3:
+            rgb = im[:3].permute(1,2,0).clamp(0,1)
         else:
-            ax.imshow(im.permute(1,2,0).clamp(0,1))
+            rgb = im[[0,0,0]].permute(1,2,0).clamp(0,1)
+        ax.imshow(rgb)
         ax.set_title(f"{s}x{s}")
         ax.axis('off')
     plt.tight_layout(); fig.savefig(out_path); plt.close(fig)
@@ -29,6 +32,9 @@ def main():
     diff=DDPMCoefficients(ck['timesteps'],device=a.device)
     coeff=diff.sample(model,1,ch*k,a.device)
     if ck.get('normalize_coeffs',False): coeff=coeff*ck['coeff_std'].to(a.device).unsqueeze(0)+ck['coeff_mean'].to(a.device).unsqueeze(0)
-    save_multires(field,coeff.reshape(1,ch,k),f"{a.outdir}/sample_multires.png",base_size=base_size)
+    out_path=f"{a.outdir}/sample_multires_base{base_size}_ch{ch}.png"
+    save_multires(field,coeff.reshape(1,ch,k),out_path,base_size=base_size)
+    with open(f"{a.outdir}/sample_meta.txt","w",encoding="utf-8") as mf:
+        mf.write(f"base_size={base_size}\nchannels={ch}\nscales={default_multiscales(base_size)}\npath={out_path}\n")
 
 if __name__=='__main__': main()
