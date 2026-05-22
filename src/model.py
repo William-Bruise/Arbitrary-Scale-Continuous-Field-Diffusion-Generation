@@ -19,16 +19,15 @@ class TimeEmbedding(nn.Module):
 
 
 class CoeffDenoiser(nn.Module):
-    def __init__(self, k: int, hidden: int = 256, tdim: int = 64):
+    def __init__(self, k: int, hidden: int = 512, depth: int = 4, tdim: int = 64):
         super().__init__()
         self.temb = TimeEmbedding(tdim)
-        self.net = nn.Sequential(
-            nn.Linear(k + tdim, hidden),
-            nn.SiLU(),
-            nn.Linear(hidden, hidden),
-            nn.SiLU(),
-            nn.Linear(hidden, k),
-        )
+
+        layers = [nn.Linear(k + tdim, hidden), nn.SiLU()]
+        for _ in range(depth - 1):
+            layers += [nn.Linear(hidden, hidden), nn.SiLU()]
+        layers += [nn.Linear(hidden, k)]
+        self.net = nn.Sequential(*layers)
 
     def forward(self, x_t: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         emb = self.temb(t)

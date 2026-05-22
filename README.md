@@ -1,29 +1,18 @@
 # Arbitrary-Scale Continuous Field Diffusion Generation (MNIST Prototype)
 
-这是一个可运行的 research prototype，目标是：
-- 学习 MNIST 图像分布；
-- diffusion 生成的是 **continuous field latent**（不是固定像素图）；
-- 同一个 sample 可在任意分辨率下渲染（28/42/56/84 等）。
+最小原型：扩散在 continuous field coefficients 上进行，并支持同一样本任意分辨率渲染。
 
-## 核心思想
-
-1. 用一个高斯基函数集合表示连续场：
-   \[
-   f(x,y)=\sum_{k=1}^{K} a_k \exp\left(-\frac{1}{2}\frac{\|[x,y]-\mu_k\|^2}{\sigma_k^2}\right)
-   \]
-2. diffusion 在系数向量 \(a\in\mathbb{R}^K\) 上进行（continuous field coefficient space）。
-3. 渲染时在任意输出网格上 query 坐标并求值得到图像。
-
-> 这不是超分辨：没有 LR 输入，也没有 fixed-scale 图先生成再 resize。
-
-## 完整训练（推荐）
+## 推荐训练命令（小补丁版）
 
 ```bash
 python -m src.train \
   --epochs 100 \
   --batch-size 128 \
   --timesteps 200 \
-  --num-basis 64 \
+  --num-basis 144 \
+  --sigma 0.08 \
+  --hidden 512 \
+  --depth 4 \
   --smooth-weight 1e-5 \
   --normalize-coeffs \
   --sample-every 500 \
@@ -31,15 +20,16 @@ python -m src.train \
   --outdir runs/full_train
 ```
 
-关键新增参数：
-- `--smooth-weight`: 2D TV 系数平滑正则权重（默认 `1e-5`）
-- `--normalize-coeffs`: 训练前估计系数均值方差并做 z-score
-- `--stats-batches`: 估计系数统计量的 batch 数（默认 `100`）
+## `smooth` 是什么？
 
-## 采样
+训练日志里输出的 `smooth` 是 **2D coefficient grid 的 TV-like 平滑项**（未乘权重前的原始值）：
 
-```bash
-python -m src.sample --ckpt runs/full_train/checkpoints/final.pt --outdir runs/full_train/sample_eval
-```
+- 先把 `coeffs` 从 `[B, K]` reshape 为 `[B, S, S]`，其中 `S=sqrt(K)`
+- 计算纵向和横向相邻差分的平方均值
+- `smooth = mean((c[i+1,j]-c[i,j])^2) + mean((c[i,j+1]-c[i,j])^2)`
 
-如果 checkpoint 中包含系数标准化统计量，采样时会自动反标准化后再渲染。
+最终总损失是：
+
+`loss = ddpm + smooth_weight * smooth`
+
+因此你看到 `smooth` 数值很大是正常的，关键看 `smooth_weight * smooth` 的量级（例如 `1e-5 * 3000 = 0.03`）。

@@ -64,12 +64,15 @@ def main():
     p.add_argument("--batch-size", type=int, default=128)
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--timesteps", type=int, default=200)
-    p.add_argument("--num-basis", type=int, default=64)
+    p.add_argument("--num-basis", type=int, default=144)
+    p.add_argument("--sigma", type=float, default=0.08, help="gaussian basis width for continuous field")
     p.add_argument("--device", type=str, default="cpu")
     p.add_argument("--outdir", type=str, default="runs/full_train")
     p.add_argument("--sample-every", type=int, default=500, help="sample every N optimization steps")
     p.add_argument("--ckpt-every", type=int, default=1000, help="checkpoint every N optimization steps")
     p.add_argument("--num-workers", type=int, default=2)
+    p.add_argument("--hidden", type=int, default=512, help="denoiser hidden dim")
+    p.add_argument("--depth", type=int, default=4, help="denoiser depth (hidden blocks)")
     p.add_argument("--smooth-weight", type=float, default=1e-5, help="weight for 2D TV smooth prior on coeff grid")
     p.add_argument("--normalize-coeffs", action="store_true", help="z-score normalize coefficients before diffusion")
     p.add_argument("--stats-batches", type=int, default=100, help="batches used to estimate coeff mean/std")
@@ -82,8 +85,8 @@ def main():
     ds = make_mnist_dataset(train=True)
     dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
 
-    field = ContinuousGaussianField(num_basis=args.num_basis, device=args.device).to(args.device)
-    model = CoeffDenoiser(k=args.num_basis).to(args.device)
+    field = ContinuousGaussianField(num_basis=args.num_basis, sigma=args.sigma, device=args.device).to(args.device)
+    model = CoeffDenoiser(k=args.num_basis, hidden=args.hidden, depth=args.depth).to(args.device)
     diff = DDPMCoefficients(timesteps=args.timesteps, device=args.device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
@@ -95,7 +98,7 @@ def main():
         print(f"[coeff-stats] mean(abs)={coeff_mean.abs().mean().item():.4f} std(mean)={coeff_std.mean().item():.4f}")
 
     print("[shape] centers:", field.centers.shape)
-    print(f"[train] dataset={len(ds)} batch_size={args.batch_size} steps_per_epoch={len(dl)}")
+    print(f"[train] dataset={len(ds)} batch_size={args.batch_size} steps_per_epoch={len(dl)} num_basis={args.num_basis} sigma={args.sigma} hidden={args.hidden} depth={args.depth}")
 
     global_step = 0
     log_path = f"{args.outdir}/logs/train_log.txt"
@@ -144,6 +147,9 @@ def main():
                     "epoch": epoch,
                     "steps": global_step,
                     "num_basis": args.num_basis,
+                    "sigma": args.sigma,
+                    "hidden": args.hidden,
+                    "depth": args.depth,
                     "timesteps": args.timesteps,
                     "normalize_coeffs": args.normalize_coeffs,
                     "coeff_mean": coeff_mean.detach().cpu(),
@@ -156,6 +162,9 @@ def main():
         "epoch": args.epochs,
         "steps": global_step,
         "num_basis": args.num_basis,
+                    "sigma": args.sigma,
+                    "hidden": args.hidden,
+                    "depth": args.depth,
         "timesteps": args.timesteps,
         "normalize_coeffs": args.normalize_coeffs,
         "coeff_mean": coeff_mean.detach().cpu(),

@@ -30,8 +30,16 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
     ckpt = torch.load(args.ckpt, map_location=args.device)
 
-    field = ContinuousGaussianField(num_basis=ckpt["num_basis"], device=args.device).to(args.device)
-    model = CoeffDenoiser(k=ckpt["num_basis"]).to(args.device)
+    field = ContinuousGaussianField(
+        num_basis=ckpt["num_basis"],
+        sigma=ckpt.get("sigma", 0.12),
+        device=args.device,
+    ).to(args.device)
+    model = CoeffDenoiser(
+        k=ckpt["num_basis"],
+        hidden=ckpt.get("hidden", 256),
+        depth=ckpt.get("depth", 2),
+    ).to(args.device)
     model.load_state_dict(ckpt["model"])
     model.eval()
 
