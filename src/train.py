@@ -5,14 +5,21 @@ from .continuous_field import ContinuousGaussianField, fit_coeffs_to_image
 from .model import LatentUNetDenoiser
 from .diffusion import DDPMCoefficients
 
-def save_multires(field, coeff, out_path, sizes=(28,42,56,84)):
-    imgs=[field.render(coeff,s,s)[0].detach().cpu() for s in sizes]
-    fig,axes=plt.subplots(len(imgs[0]),len(sizes),figsize=(3*len(sizes),3*len(imgs[0])))
-    if imgs[0].shape[0]==1: axes=[axes]
-    for r in range(len(imgs[0])):
-        for c,(im,s) in enumerate(zip(imgs,sizes)):
-            axes[r][c].imshow(im[r], cmap='gray' if im.shape[0]==1 else None, vmin=0, vmax=1)
-            axes[r][c].set_title(f"{s}x{s} ch{r}"); axes[r][c].axis('off')
+def default_multiscales(base_size: int):
+    return [base_size * m for m in (1, 2, 3, 4)]
+
+def save_multires(field, coeff, out_path, base_size: int):
+    sizes = default_multiscales(base_size)
+    imgs=[field.render(coeff,s,s)[0].detach().cpu() for s in sizes]  # list of [C,H,W]
+    fig,axes=plt.subplots(1,len(sizes),figsize=(4*len(sizes),4))
+    if len(sizes)==1: axes=[axes]
+    for ax,im,s in zip(axes,imgs,sizes):
+        if im.shape[0]==1:
+            ax.imshow(im[0], cmap='gray', vmin=0, vmax=1)
+        else:
+            ax.imshow(im.permute(1,2,0).clamp(0,1))
+        ax.set_title(f"{s}x{s}")
+        ax.axis('off')
     plt.tight_layout(); fig.savefig(out_path); plt.close(fig)
 
 def estimate_coeff_stats(field, dl, device, max_batches=100):
@@ -58,7 +65,7 @@ def main():
           msg=f"epoch={e}/{args.epochs} step={step} loss={loss.item():.6f} coeffs={tuple(train.shape)} x_t={tuple(x_t.shape)}"; print(msg); open(log,'a').write(msg+'\n')
         if step%args.sample_every==0:
           sc=diff.sample(model,1,channels*args.num_basis,args.device); sc=sc*std.unsqueeze(0)+mean.unsqueeze(0) if args.normalize_coeffs else sc
-          save_multires(field,sc.reshape(1,channels,args.num_basis),f"{args.outdir}/samples/step_{step}_multires.png")
+          save_multires(field,sc.reshape(1,channels,args.num_basis),f"{args.outdir}/samples/step_{step}_multires.png",base_size=args.image_size)
         if step%args.ckpt_every==0:
           torch.save({'model':model.state_dict(),'epoch':e,'steps':step,'dataset':args.dataset,'image_size':args.image_size,'channels':channels,'num_basis':args.num_basis,'sigma':args.sigma,'unet_base':args.unet_base,'timesteps':args.timesteps,'normalize_coeffs':args.normalize_coeffs,'coeff_mean':mean.cpu(),'coeff_std':std.cpu()},f"{args.outdir}/checkpoints/step_{step}.pt")
     torch.save({'model':model.state_dict(),'epoch':args.epochs,'steps':step,'dataset':args.dataset,'image_size':args.image_size,'channels':channels,'num_basis':args.num_basis,'sigma':args.sigma,'unet_base':args.unet_base,'timesteps':args.timesteps,'normalize_coeffs':args.normalize_coeffs,'coeff_mean':mean.cpu(),'coeff_std':std.cpu()},f"{args.outdir}/checkpoints/final.pt")
