@@ -1,1 +1,1 @@
-python -m src.train --dataset celeba --data-root ./data --image-size 64 --epochs 50 --batch-size 64 --timesteps 1000 --num-basis 256 --sigma 0.06 --unet-base 128 --normalize-coeffs --outdir runs/celeba
+python -m src.train --dataset celeba --data-root ./data --image-size 64 --epochs 50 --batch-size 64 --timesteps 1000 --num-basis 256 --sigma 0.06 --unet-base 128 --normalize-coeffs --outdir runs/celeba --device cuda

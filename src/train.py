@@ -32,10 +32,13 @@ def main():
     p.add_argument('--dataset',default='mnist'); p.add_argument('--data-root',default='./data'); p.add_argument('--image-size',type=int,default=32)
     p.add_argument('--epochs',type=int,default=10); p.add_argument('--batch-size',type=int,default=128); p.add_argument('--lr',type=float,default=2e-4)
     p.add_argument('--timesteps',type=int,default=200); p.add_argument('--num-basis',type=int,default=144); p.add_argument('--sigma',type=float,default=0.08)
-    p.add_argument('--device',default='cpu'); p.add_argument('--outdir',default='runs/full_train'); p.add_argument('--sample-every',type=int,default=500)
+    p.add_argument('--device',default='auto', help='auto|cpu|cuda|cuda:0'); p.add_argument('--outdir',default='runs/full_train'); p.add_argument('--sample-every',type=int,default=500)
     p.add_argument('--ckpt-every',type=int,default=1000); p.add_argument('--num-workers',type=int,default=2); p.add_argument('--unet-base',type=int,default=64)
     p.add_argument('--normalize-coeffs',action='store_true'); p.add_argument('--stats-batches',type=int,default=100)
     args=p.parse_args()
+    if args.device == 'auto':
+      args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(f'[device] using {args.device}')
     os.makedirs(f"{args.outdir}/samples",exist_ok=True); os.makedirs(f"{args.outdir}/checkpoints",exist_ok=True); os.makedirs(f"{args.outdir}/logs",exist_ok=True)
     ds=make_dataset(args.dataset,args.data_root,True,args.image_size); dl=DataLoader(ds,batch_size=args.batch_size,shuffle=True,num_workers=args.num_workers,drop_last=True)
     sample_x,_=next(iter(dl)); channels=sample_x.shape[1]
