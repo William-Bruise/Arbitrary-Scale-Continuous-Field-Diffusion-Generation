@@ -1,1 +1,1 @@
-python -m src.train --dataset cifar10 --data-root ./data --image-size 32 --epochs 100 --batch-size 128 --timesteps 200 --num-basis 256 --sigma 0.06 --unet-base 64 --normalize-coeffs --outdir runs/cifar10
+python -m src.train --dataset cifar10 --data-root ./data --image-size 32 --epochs 100 --batch-size 128 --timesteps 1000 --num-basis 256 --sigma 0.06 --unet-base 128 --normalize-coeffs --outdir runs/cifar10
