@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 from .dataset import make_mnist_dataset
 from .continuous_field import ContinuousGaussianField, fit_coeffs_to_image
-from .model import CoeffDenoiser
+from .model import LatentUNetDenoiser
 from .diffusion import DDPMCoefficients
 
 
@@ -60,8 +60,7 @@ def main():
     p.add_argument("--sample-every", type=int, default=500, help="sample every N optimization steps")
     p.add_argument("--ckpt-every", type=int, default=1000, help="checkpoint every N optimization steps")
     p.add_argument("--num-workers", type=int, default=2)
-    p.add_argument("--hidden", type=int, default=512, help="denoiser hidden dim")
-    p.add_argument("--depth", type=int, default=4, help="denoiser depth (hidden blocks)")
+    p.add_argument("--unet-base", type=int, default=64, help="latent UNet base channels")
     p.add_argument("--normalize-coeffs", action="store_true", help="z-score normalize coefficients before diffusion")
     p.add_argument("--stats-batches", type=int, default=100, help="batches used to estimate coeff mean/std")
     args = p.parse_args()
@@ -74,7 +73,7 @@ def main():
     dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
 
     field = ContinuousGaussianField(num_basis=args.num_basis, sigma=args.sigma, device=args.device).to(args.device)
-    model = CoeffDenoiser(k=args.num_basis, hidden=args.hidden, depth=args.depth).to(args.device)
+    model = LatentUNetDenoiser(k=args.num_basis, base=args.unet_base).to(args.device)
     diff = DDPMCoefficients(timesteps=args.timesteps, device=args.device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
@@ -86,7 +85,7 @@ def main():
         print(f"[coeff-stats] mean(abs)={coeff_mean.abs().mean().item():.4f} std(mean)={coeff_std.mean().item():.4f}")
 
     print("[shape] centers:", field.centers.shape)
-    print(f"[train] dataset={len(ds)} batch_size={args.batch_size} steps_per_epoch={len(dl)} num_basis={args.num_basis} sigma={args.sigma} hidden={args.hidden} depth={args.depth}")
+    print(f"[train] dataset={len(ds)} batch_size={args.batch_size} steps_per_epoch={len(dl)} num_basis={args.num_basis} sigma={args.sigma} unet_base={args.unet_base}")
 
     global_step = 0
     log_path = f"{args.outdir}/logs/train_log.txt"
@@ -135,8 +134,7 @@ def main():
                     "steps": global_step,
                     "num_basis": args.num_basis,
                     "sigma": args.sigma,
-                    "hidden": args.hidden,
-                    "depth": args.depth,
+                    "unet_base": args.unet_base,
                     "timesteps": args.timesteps,
                     "normalize_coeffs": args.normalize_coeffs,
                     "coeff_mean": coeff_mean.detach().cpu(),
@@ -150,8 +148,7 @@ def main():
         "steps": global_step,
         "num_basis": args.num_basis,
                     "sigma": args.sigma,
-                    "hidden": args.hidden,
-                    "depth": args.depth,
+                    "unet_base": args.unet_base,
         "timesteps": args.timesteps,
         "normalize_coeffs": args.normalize_coeffs,
         "coeff_mean": coeff_mean.detach().cpu(),

@@ -4,7 +4,7 @@ import torch
 import matplotlib.pyplot as plt
 
 from .continuous_field import ContinuousGaussianField
-from .model import CoeffDenoiser
+from .model import LatentUNetDenoiser
 from .diffusion import DDPMCoefficients
 
 
@@ -35,10 +35,9 @@ def main():
         sigma=ckpt.get("sigma", 0.12),
         device=args.device,
     ).to(args.device)
-    model = CoeffDenoiser(
+    model = LatentUNetDenoiser(
         k=ckpt["num_basis"],
-        hidden=ckpt.get("hidden", 256),
-        depth=ckpt.get("depth", 2),
+        base=ckpt.get("unet_base", 64),
     ).to(args.device)
     model.load_state_dict(ckpt["model"])
     model.eval()

@@ -55,7 +55,7 @@ diffusion 模型学习的是系数向量 \(a\in\mathbb{R}^K\) 的分布。
 
 - `src/model.py`
   - `TimeEmbedding`
-  - `CoeffDenoiser`（可配置 `hidden` 和 `depth`）
+  - `LatentUNetDenoiser`（系数网格上的轻量 UNet 主干）
 
 - `src/train.py`
   - 训练主循环
@@ -134,8 +134,7 @@ python -m src.train \
   --timesteps 200 \
   --num-basis 144 \
   --sigma 0.08 \
-  --hidden 512 \
-  --depth 4 \
+  --unet-base 64 \
   --normalize-coeffs \
   --sample-every 500 \
   --ckpt-every 1000 \
@@ -159,8 +158,7 @@ python -m src.sample \
 - `--timesteps`：扩散总步数 T
 - `--num-basis`：连续场 basis 数量 K（完全平方数）
 - `--sigma`：Gaussian basis 宽度（越小越锐利，过小可能破碎）
-- `--hidden`：去噪 MLP 隐层维度
-- `--depth`：去噪 MLP 隐层层数
+- `--unet-base`：latent UNet 基础通道数
 - `--normalize-coeffs`：是否启用系数 z-score
 - `--stats-batches`：估计均值方差用多少个 batch
 - `--sample-every`：每 N 步保存一次多分辨率 sample
