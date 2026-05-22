@@ -66,9 +66,12 @@ def save_sample_grid(images: torch.Tensor, out_path: str, n_show: int = 16, titl
             if idx < n_show:
                 im = imgs[idx]
                 if im.shape[0] == 1:
-                    ax.imshow(im[0], cmap="gray", vmin=0, vmax=1)
+                    rgb = im.repeat(3,1,1).permute(1,2,0).clamp(0,1)
+                elif im.shape[0] >= 3:
+                    rgb = im[:3].permute(1,2,0).clamp(0,1)
                 else:
-                    ax.imshow(im.permute(1, 2, 0).clamp(0, 1))
+                    rgb = im[[0,0,0]].permute(1,2,0).clamp(0,1)
+                ax.imshow(rgb)
             ax.axis("off")
             idx += 1
     if title:
