@@ -217,3 +217,31 @@ sample 脚本输出：
 3. `python -m src.sample --ckpt ...`
 
 确认流程跑通后再拉到 100 epochs 做质量观察。
+
+
+---
+
+## 11. 生成指标与分布外尺寸（OOD scale）测试
+
+新增 `src/eval.py`，用于评估：
+
+1) **生成质量代理指标**（基于 MNIST 分类器）：
+- `mean_confidence`：分类器对生成样本的平均置信度（越高通常越像数字）
+- `label_entropy`：预测标签分布熵（过低可能模式塌缩，过高可能乱噪声）
+
+2) **分布外尺寸生成能力**：
+- 在训练尺度（默认 28）以及未训练过尺度（如 42/56/70/84/112）上分别生成并评估
+- 通过跨尺度指标变化观察 OOD 尺寸稳定性
+
+### 11.1 评估命令
+
+```bash
+python -m src.eval   --ckpt runs/full_train/checkpoints/final.pt   --num-samples 1024   --train-size 28   --ood-sizes 42,56,70,84,112   --clf-epochs 2   --outdir runs/full_train/eval
+```
+
+输出：
+- `runs/full_train/eval/metrics.txt`
+
+说明：
+- 分类器在评估脚本内自动训练（MNIST train），并在 MNIST test 上打印 accuracy。
+- OOD 尺寸评估时，为保持分类器输入一致，先将生成图缩放到 28x28 再分类。
