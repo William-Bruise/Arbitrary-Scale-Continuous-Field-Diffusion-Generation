@@ -14,13 +14,16 @@ from .model import LatentUNetDenoiser
 
 def load_generator(ckpt_path: str, device: str):
     ckpt = torch.load(ckpt_path, map_location=device)
+    channels = ckpt.get("channels", 1)
     field = ContinuousGaussianField(
         num_basis=ckpt["num_basis"],
         sigma=ckpt.get("sigma", 0.08),
+        channels=channels,
         device=device,
     ).to(device)
     denoiser = LatentUNetDenoiser(
         k=ckpt["num_basis"],
+        channels=channels,
         base=ckpt.get("unet_base", 64),
     ).to(device)
     denoiser.load_state_dict(ckpt["model"])
@@ -30,20 +33,22 @@ def load_generator(ckpt_path: str, device: str):
 
 
 def sample_images(field, denoiser, diff, ckpt, n, h, w, device):
+    ch = ckpt.get("channels", 1)
+    k = ckpt["num_basis"]
     with torch.no_grad():
-        coeff = diff.sample(denoiser, batch_size=n, k=ckpt["num_basis"], device=device)
+        coeff = diff.sample(denoiser, batch_size=n, k=ch * k, device=device)
         if ckpt.get("normalize_coeffs", False):
             mean = ckpt["coeff_mean"].to(device).unsqueeze(0)
             std = ckpt["coeff_std"].to(device).unsqueeze(0)
             coeff = coeff * std + mean
+        coeff = coeff.reshape(n, ch, k)
         img = field.render(coeff, h, w)
     return img
 
 
-
-
 def save_sample_grid(images: torch.Tensor, out_path: str, n_show: int = 16, title: str = ""):
-    imgs = images[:n_show, 0].detach().cpu()
+    imgs = images[:n_show].detach().cpu()  # [N,C,H,W]
+    n_show = imgs.shape[0]
     cols = int(n_show ** 0.5)
     rows = (n_show + cols - 1) // cols
     fig, axes = plt.subplots(rows, cols, figsize=(cols * 2, rows * 2))
@@ -58,8 +63,12 @@ def save_sample_grid(images: torch.Tensor, out_path: str, n_show: int = 16, titl
     for r in range(rows):
         for c in range(cols):
             ax = axes[r][c]
-            if idx < imgs.shape[0]:
-                ax.imshow(imgs[idx], cmap="gray", vmin=0, vmax=1)
+            if idx < n_show:
+                im = imgs[idx]
+                if im.shape[0] == 1:
+                    ax.imshow(im[0], cmap="gray", vmin=0, vmax=1)
+                else:
+                    ax.imshow(im.permute(1, 2, 0).clamp(0, 1))
             ax.axis("off")
             idx += 1
     if title:
@@ -68,29 +77,57 @@ def save_sample_grid(images: torch.Tensor, out_path: str, n_show: int = 16, titl
     fig.savefig(out_path)
     plt.close(fig)
 
-def train_mnist_classifier(device: str, epochs: int = 2, batch_size: int = 256, dataset: str = "mnist", root: str = "./data"):
-    tf = transforms.Compose([transforms.ToTensor()])
+
+def build_dataset_pair(dataset: str, root: str, image_size: int, channels: int):
     dname = dataset.lower()
-    if dname == "mnist":
-        train_ds = datasets.MNIST(root=root, train=True, download=True, transform=tf)
-        test_ds = datasets.MNIST(root=root, train=False, download=True, transform=tf)
-    elif dname == "fashionmnist":
-        train_ds = datasets.FashionMNIST(root=root, train=True, download=True, transform=tf)
-        test_ds = datasets.FashionMNIST(root=root, train=False, download=True, transform=tf)
-    elif dname == "kmnist":
-        train_ds = datasets.KMNIST(root=root, train=True, download=True, transform=tf)
-        test_ds = datasets.KMNIST(root=root, train=False, download=True, transform=tf)
-    elif dname == "cifar10":
-        tf = transforms.Compose([transforms.Grayscale(num_output_channels=1), transforms.ToTensor()])
-        train_ds = datasets.CIFAR10(root=root, train=True, download=True, transform=tf)
-        test_ds = datasets.CIFAR10(root=root, train=False, download=True, transform=tf)
-    else:
-        raise ValueError(f"Unsupported dataset for classifier: {dataset}")
+    if dname in ["mnist", "fashionmnist", "kmnist"]:
+        tf = transforms.ToTensor()
+        if dname == "mnist":
+            return (
+                datasets.MNIST(root=root, train=True, download=True, transform=tf),
+                datasets.MNIST(root=root, train=False, download=True, transform=tf),
+            )
+        if dname == "fashionmnist":
+            return (
+                datasets.FashionMNIST(root=root, train=True, download=True, transform=tf),
+                datasets.FashionMNIST(root=root, train=False, download=True, transform=tf),
+            )
+        return (
+            datasets.KMNIST(root=root, train=True, download=True, transform=tf),
+            datasets.KMNIST(root=root, train=False, download=True, transform=tf),
+        )
+
+    if dname == "cifar10":
+        tf = transforms.Compose([transforms.Resize((image_size, image_size)), transforms.ToTensor()])
+        return (
+            datasets.CIFAR10(root=root, train=True, download=True, transform=tf),
+            datasets.CIFAR10(root=root, train=False, download=True, transform=tf),
+        )
+
+    if dname == "stl10":
+        tf = transforms.Compose([transforms.Resize((image_size, image_size)), transforms.ToTensor()])
+        return (
+            datasets.STL10(root=root, split="train", download=True, transform=tf),
+            datasets.STL10(root=root, split="test", download=True, transform=tf),
+        )
+
+    if dname == "celeba":
+        tf = transforms.Compose([transforms.CenterCrop(178), transforms.Resize((image_size, image_size)), transforms.ToTensor()])
+        return (
+            datasets.CelebA(root=root, split="train", download=True, transform=tf),
+            datasets.CelebA(root=root, split="valid", download=True, transform=tf),
+        )
+
+    raise ValueError(f"Unsupported dataset for eval classifier: {dataset}")
+
+
+def train_classifier(device: str, epochs: int, batch_size: int, dataset: str, root: str, image_size: int, channels: int):
+    train_ds, test_ds = build_dataset_pair(dataset, root, image_size, channels)
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2)
     test_dl = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=2)
 
     model = resnet18(num_classes=10)
-    model.conv1 = torch.nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1, bias=False)
+    model.conv1 = torch.nn.Conv2d(channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
     model.maxpool = torch.nn.Identity()
     model.to(device)
 
@@ -134,7 +171,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--ckpt", type=str, required=True)
     p.add_argument("--device", type=str, default="cpu")
-    p.add_argument("--dataset", type=str, default="mnist", help="dataset: mnist|fashionmnist|kmnist|cifar10")
+    p.add_argument("--dataset", type=str, default="mnist")
     p.add_argument("--data-root", type=str, default="./data")
     p.add_argument("--num-samples", type=int, default=1024)
     p.add_argument("--clf-epochs", type=int, default=2)
@@ -145,8 +182,18 @@ def main():
 
     os.makedirs(args.outdir, exist_ok=True)
     ckpt, field, denoiser, diff = load_generator(args.ckpt, args.device)
+    channels = ckpt.get("channels", 1)
+    image_size = ckpt.get("image_size", args.train_size)
 
-    clf, acc = train_mnist_classifier(args.device, epochs=args.clf_epochs, dataset=args.dataset, root=args.data_root)
+    clf, acc = train_classifier(
+        args.device,
+        epochs=args.clf_epochs,
+        batch_size=256,
+        dataset=args.dataset,
+        root=args.data_root,
+        image_size=image_size,
+        channels=channels,
+    )
     print(f"[eval] classifier test acc={acc:.4f}")
 
     sizes = [int(x.strip()) for x in args.ood_sizes.split(",") if x.strip()]
@@ -156,17 +203,12 @@ def main():
     for s in all_sizes:
         imgs = sample_images(field, denoiser, diff, ckpt, args.num_samples, s, s, args.device)
         save_sample_grid(imgs, os.path.join(args.outdir, f"samples_size_{s}.png"), n_show=16, title=f"Generated samples @ {s}x{s}")
-        if s != 28:
-            imgs_for_clf = F.interpolate(imgs, size=(28, 28), mode="bilinear", align_corners=False)
+        if s != image_size:
+            imgs_for_clf = F.interpolate(imgs, size=(image_size, image_size), mode="bilinear", align_corners=False)
         else:
             imgs_for_clf = imgs
         m = classifier_metrics(clf, imgs_for_clf)
-        row = {
-            "size": s,
-            "mean_confidence": m["mean_confidence"],
-            "label_entropy": m["label_entropy"],
-            "label_hist": m["label_hist"],
-        }
+        row = {"size": s, "mean_confidence": m["mean_confidence"], "label_entropy": m["label_entropy"], "label_hist": m["label_hist"]}
         rows.append(row)
         print(f"[eval] size={s} conf={row['mean_confidence']:.4f} entropy={row['label_entropy']:.4f}")
 
