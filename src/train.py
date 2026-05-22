@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
-from .dataset import make_mnist_dataset
+from .dataset import make_dataset
 from .continuous_field import ContinuousGaussianField, fit_coeffs_to_image
 from .model import LatentUNetDenoiser
 from .diffusion import DDPMCoefficients
@@ -49,6 +49,8 @@ def estimate_coeff_stats(field, dl, device: str, max_batches: int = 100):
 
 def main():
     p = argparse.ArgumentParser()
+    p.add_argument("--dataset", type=str, default="mnist", help="dataset: mnist|fashionmnist|kmnist|cifar10")
+    p.add_argument("--data-root", type=str, default="./data")
     p.add_argument("--epochs", type=int, default=10, help="full training epochs")
     p.add_argument("--batch-size", type=int, default=128)
     p.add_argument("--lr", type=float, default=2e-4)
@@ -69,7 +71,7 @@ def main():
     os.makedirs(f"{args.outdir}/checkpoints", exist_ok=True)
     os.makedirs(f"{args.outdir}/logs", exist_ok=True)
 
-    ds = make_mnist_dataset(train=True)
+    ds = make_dataset(name=args.dataset, root=args.data_root, train=True)
     dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
 
     field = ContinuousGaussianField(num_basis=args.num_basis, sigma=args.sigma, device=args.device).to(args.device)
@@ -85,7 +87,7 @@ def main():
         print(f"[coeff-stats] mean(abs)={coeff_mean.abs().mean().item():.4f} std(mean)={coeff_std.mean().item():.4f}")
 
     print("[shape] centers:", field.centers.shape)
-    print(f"[train] dataset={len(ds)} batch_size={args.batch_size} steps_per_epoch={len(dl)} num_basis={args.num_basis} sigma={args.sigma} unet_base={args.unet_base}")
+    print(f"[train] dataset_name={args.dataset} dataset_size={len(ds)} batch_size={args.batch_size} steps_per_epoch={len(dl)} num_basis={args.num_basis} sigma={args.sigma} unet_base={args.unet_base}")
 
     global_step = 0
     log_path = f"{args.outdir}/logs/train_log.txt"
@@ -132,7 +134,9 @@ def main():
                     "model": model.state_dict(),
                     "epoch": epoch,
                     "steps": global_step,
-                    "num_basis": args.num_basis,
+                    "dataset": args.dataset,
+                    "dataset": args.dataset,
+        "num_basis": args.num_basis,
                     "sigma": args.sigma,
                     "unet_base": args.unet_base,
                     "timesteps": args.timesteps,
@@ -146,6 +150,7 @@ def main():
         "model": model.state_dict(),
         "epoch": args.epochs,
         "steps": global_step,
+        "dataset": args.dataset,
         "num_basis": args.num_basis,
                     "sigma": args.sigma,
                     "unet_base": args.unet_base,

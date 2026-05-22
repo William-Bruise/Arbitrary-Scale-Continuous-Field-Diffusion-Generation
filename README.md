@@ -245,3 +245,49 @@ python -m src.eval   --ckpt runs/full_train/checkpoints/final.pt   --num-samples
 说明：
 - 分类器在评估脚本内自动训练（MNIST train），并在 MNIST test 上打印 accuracy。
 - OOD 尺寸评估时，为保持分类器输入一致，先将生成图缩放到 28x28 再分类。
+
+
+---
+
+## 12. 支持更多通用数据集（便于扩散对比）
+
+训练脚本新增 `--dataset` 与 `--data-root`，支持：
+
+- `mnist`
+- `fashionmnist`
+- `kmnist`
+- `cifar10`（自动转灰度单通道，保持当前 continuous field pipeline 不变）
+
+示例：
+
+```bash
+python -m src.train \
+  --dataset fashionmnist \
+  --data-root ./data \
+  --epochs 100 \
+  --batch-size 128 \
+  --timesteps 200 \
+  --num-basis 144 \
+  --sigma 0.08 \
+  --unet-base 64 \
+  --normalize-coeffs \
+  --outdir runs/fashionmnist
+```
+
+CIFAR10 示例：
+
+```bash
+python -m src.train \
+  --dataset cifar10 \
+  --data-root ./data \
+  --epochs 100 \
+  --batch-size 128 \
+  --timesteps 200 \
+  --num-basis 256 \
+  --sigma 0.06 \
+  --unet-base 64 \
+  --normalize-coeffs \
+  --outdir runs/cifar10_gray
+```
+
+评估脚本 `src.eval` 也新增同样参数 `--dataset/--data-root`，会在对应数据集上训练分类器并计算生成指标。

@@ -68,10 +68,24 @@ def save_sample_grid(images: torch.Tensor, out_path: str, n_show: int = 16, titl
     fig.savefig(out_path)
     plt.close(fig)
 
-def train_mnist_classifier(device: str, epochs: int = 2, batch_size: int = 256):
+def train_mnist_classifier(device: str, epochs: int = 2, batch_size: int = 256, dataset: str = "mnist", root: str = "./data"):
     tf = transforms.Compose([transforms.ToTensor()])
-    train_ds = datasets.MNIST(root="./data", train=True, download=True, transform=tf)
-    test_ds = datasets.MNIST(root="./data", train=False, download=True, transform=tf)
+    dname = dataset.lower()
+    if dname == "mnist":
+        train_ds = datasets.MNIST(root=root, train=True, download=True, transform=tf)
+        test_ds = datasets.MNIST(root=root, train=False, download=True, transform=tf)
+    elif dname == "fashionmnist":
+        train_ds = datasets.FashionMNIST(root=root, train=True, download=True, transform=tf)
+        test_ds = datasets.FashionMNIST(root=root, train=False, download=True, transform=tf)
+    elif dname == "kmnist":
+        train_ds = datasets.KMNIST(root=root, train=True, download=True, transform=tf)
+        test_ds = datasets.KMNIST(root=root, train=False, download=True, transform=tf)
+    elif dname == "cifar10":
+        tf = transforms.Compose([transforms.Grayscale(num_output_channels=1), transforms.ToTensor()])
+        train_ds = datasets.CIFAR10(root=root, train=True, download=True, transform=tf)
+        test_ds = datasets.CIFAR10(root=root, train=False, download=True, transform=tf)
+    else:
+        raise ValueError(f"Unsupported dataset for classifier: {dataset}")
     train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2)
     test_dl = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=2)
 
@@ -120,6 +134,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--ckpt", type=str, required=True)
     p.add_argument("--device", type=str, default="cpu")
+    p.add_argument("--dataset", type=str, default="mnist", help="dataset: mnist|fashionmnist|kmnist|cifar10")
+    p.add_argument("--data-root", type=str, default="./data")
     p.add_argument("--num-samples", type=int, default=1024)
     p.add_argument("--clf-epochs", type=int, default=2)
     p.add_argument("--outdir", type=str, default="runs/eval")
@@ -130,7 +146,7 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
     ckpt, field, denoiser, diff = load_generator(args.ckpt, args.device)
 
-    clf, acc = train_mnist_classifier(args.device, epochs=args.clf_epochs)
+    clf, acc = train_mnist_classifier(args.device, epochs=args.clf_epochs, dataset=args.dataset, root=args.data_root)
     print(f"[eval] classifier test acc={acc:.4f}")
 
     sizes = [int(x.strip()) for x in args.ood_sizes.split(",") if x.strip()]
