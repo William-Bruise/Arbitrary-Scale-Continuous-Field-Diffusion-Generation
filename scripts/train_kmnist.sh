@@ -1,0 +1,1 @@
+python -m src.train --dataset kmnist --data-root ./data --image-size 28 --epochs 100 --batch-size 128 --lr 1e-4 --weight-decay 0.01 --timesteps 1000 --num-basis 64 --sigma 0.08 --unet-base 64 --normalize-coeffs --scheduler cosine --outdir runs/kmnist --device cuda
