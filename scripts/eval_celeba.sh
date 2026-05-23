@@ -1,0 +1,1 @@
+MPLBACKEND=Agg python -m src.eval --ckpt runs/celeba128/checkpoints/final.pt --dataset celeba --data-root ./data --train-size 128 --ood-sizes 256,384,512,640 --num-samples 1024 --clf-epochs 2 --outdir runs/celeba128/eval
