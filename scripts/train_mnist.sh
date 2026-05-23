@@ -1,1 +1,1 @@
-python -m src.train --dataset mnist --data-root ./data --image-size 28 --epochs 100 --batch-size 128 --timesteps 1000 --num-basis 144 --sigma 0.08 --unet-base 128 --normalize-coeffs --outdir runs/mnist --device cuda
+python -m src.train --dataset mnist --data-root ./data --image-size 28 --epochs 100 --batch-size 128 --lr 1e-4 --weight-decay 0.01 --timesteps 1000 --num-basis 64 --sigma 0.08 --unet-base 64 --normalize-coeffs --scheduler cosine --outdir runs/mnist --device cuda

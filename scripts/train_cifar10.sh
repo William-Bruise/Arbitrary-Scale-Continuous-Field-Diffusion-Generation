@@ -1,1 +1,1 @@
-python -m src.train --dataset cifar10 --data-root ./data --image-size 32 --epochs 100 --batch-size 128 --timesteps 1000 --num-basis 256 --sigma 0.06 --unet-base 128 --normalize-coeffs --outdir runs/cifar10 --device cuda
+python -m src.train --dataset cifar10 --data-root ./data --image-size 32 --epochs 100 --batch-size 128 --lr 1e-4 --weight-decay 0.01 --timesteps 1000 --num-basis 64 --sigma 0.06 --unet-base 64 --normalize-coeffs --scheduler cosine --outdir runs/cifar10 --device cuda

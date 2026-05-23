@@ -1,1 +1,1 @@
-python -m src.train --dataset stl10 --data-root ./data --image-size 64 --epochs 100 --batch-size 64 --timesteps 1000 --num-basis 256 --sigma 0.06 --unet-base 128 --normalize-coeffs --outdir runs/stl10 --device cuda
+python -m src.train --dataset stl10 --data-root ./data --image-size 96 --epochs 100 --batch-size 64 --lr 1e-4 --weight-decay 0.01 --timesteps 1000 --num-basis 256 --sigma 0.06 --unet-base 256 --normalize-coeffs --scheduler cosine --outdir runs/stl10_unlabeled96 --device cuda

@@ -40,11 +40,11 @@ def estimate_coeff_stats(field, dl, device, max_batches=100):
 def main():
     p=argparse.ArgumentParser()
     p.add_argument('--dataset',default='mnist'); p.add_argument('--data-root',default='./data'); p.add_argument('--image-size',type=int,default=32)
-    p.add_argument('--epochs',type=int,default=10); p.add_argument('--batch-size',type=int,default=128); p.add_argument('--lr',type=float,default=1e-4)
+    p.add_argument('--epochs',type=int,default=10); p.add_argument('--batch-size',type=int,default=128); p.add_argument('--lr',type=float,default=1e-4); p.add_argument('--weight-decay',type=float,default=0.01)
     p.add_argument('--timesteps',type=int,default=200); p.add_argument('--num-basis',type=int,default=144); p.add_argument('--sigma',type=float,default=0.08)
     p.add_argument('--device',default='auto', help='auto|cpu|cuda|cuda:0'); p.add_argument('--outdir',default='runs/full_train'); p.add_argument('--sample-every',type=int,default=10000)
     p.add_argument('--ckpt-every',type=int,default=10000); p.add_argument('--num-workers',type=int,default=2); p.add_argument('--unet-base',type=int,default=64)
-    p.add_argument('--normalize-coeffs',action='store_true'); p.add_argument('--stats-batches',type=int,default=100)
+    p.add_argument('--normalize-coeffs',action='store_true'); p.add_argument('--stats-batches',type=int,default=100); p.add_argument('--scheduler',default='cosine',choices=['none','cosine'])
     args=p.parse_args()
     if args.device == 'auto':
       args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -54,7 +54,9 @@ def main():
     sample_x,_=next(iter(dl)); channels=sample_x.shape[1]
     field=ContinuousGaussianField(args.num_basis,args.sigma,channels,args.device).to(args.device)
     model=LatentUNetDenoiser(args.num_basis,channels,args.unet_base).to(args.device)
-    diff=DDPMCoefficients(args.timesteps,device=args.device); opt=torch.optim.AdamW(model.parameters(),lr=args.lr)
+    diff=DDPMCoefficients(args.timesteps,device=args.device); opt=torch.optim.AdamW(model.parameters(),lr=args.lr,weight_decay=args.weight_decay)
+    total_steps=max(1,args.epochs*len(dl))
+    sched=torch.optim.lr_scheduler.CosineAnnealingLR(opt,T_max=total_steps) if args.scheduler=='cosine' else None
     mean=torch.zeros(channels*args.num_basis,device=args.device); std=torch.ones(channels*args.num_basis,device=args.device)
     if args.normalize_coeffs: mean,std=estimate_coeff_stats(field,dl,args.device,args.stats_batches)
     step=0; log=f"{args.outdir}/logs/train_log.txt"
@@ -63,9 +65,11 @@ def main():
         x=x.to(args.device); coeff=fit_coeffs_to_image(field,x); flat=coeff.reshape(x.shape[0],-1)
         train=(flat-mean)/std if args.normalize_coeffs else flat
         t=torch.randint(0,args.timesteps,(x.shape[0],),device=args.device); noise=torch.randn_like(train); x_t=diff.q_sample(train,t,noise)
-        pred=model(x_t,t); loss=((pred-noise)**2).mean(); opt.zero_grad(set_to_none=True); loss.backward(); opt.step(); step+=1
+        pred=model(x_t,t); loss=((pred-noise)**2).mean(); opt.zero_grad(set_to_none=True); loss.backward(); opt.step();
+        if sched is not None: sched.step(); step+=1
         if step%50==0 or step==1:
-          msg=f"epoch={e}/{args.epochs} step={step} loss={loss.item():.6f} coeffs={tuple(train.shape)} x_t={tuple(x_t.shape)}"; print(msg); open(log,'a').write(msg+'\n')
+          cur_lr=opt.param_groups[0]['lr']
+          msg=f"epoch={e}/{args.epochs} step={step} loss={loss.item():.6f} lr={cur_lr:.6e} coeffs={tuple(train.shape)} x_t={tuple(x_t.shape)}"; print(msg); open(log,'a').write(msg+'\n')
         if step%args.sample_every==0:
           sc=diff.sample(model,1,channels*args.num_basis,args.device); sc=sc*std.unsqueeze(0)+mean.unsqueeze(0) if args.normalize_coeffs else sc
           sample_path=f"{args.outdir}/samples/step_{step}_multires_base{args.image_size}_ch{channels}.png"

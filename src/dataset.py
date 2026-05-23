@@ -23,7 +23,7 @@ def make_dataset(name: str = "mnist", root: str = "./data", train: bool = True, 
         return datasets.CelebA(root=root, split=split, download=True, transform=tf)
     if name == "stl10":
         tf = transforms.Compose([transforms.Resize((image_size, image_size)), transforms.ToTensor()])
-        split = "train" if train else "test"
+        split = "unlabeled" if train else "test"
         return datasets.STL10(root=root, split=split, download=True, transform=tf)
     raise ValueError("Unsupported dataset: choose from [mnist, fashionmnist, kmnist, cifar10, celeba, stl10]")
 
