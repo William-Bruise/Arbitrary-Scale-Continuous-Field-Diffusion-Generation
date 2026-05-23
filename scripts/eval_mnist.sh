@@ -1,1 +1,1 @@
-MPLBACKEND=Agg python -m src.eval --ckpt runs/mnist/checkpoints/final.pt --dataset mnist --data-root ./data --train-size 28 --ood-sizes 56,84,112 --num-samples 1024 --clf-epochs 2 --outdir runs/mnist/eval
+MPLBACKEND=Agg python -m src.eval --ckpt runs/mnist/checkpoints/final.pt --dataset mnist --data-root ./data --train-size 28 --ood-sizes 56,84,112,140 --num-samples 1024 --clf-epochs 2 --outdir runs/mnist/eval

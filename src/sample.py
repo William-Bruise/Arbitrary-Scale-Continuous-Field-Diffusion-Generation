@@ -4,7 +4,7 @@ from .model import LatentUNetDenoiser
 from .diffusion import DDPMCoefficients
 
 def default_multiscales(base_size: int):
-    return [base_size * m for m in (1, 2, 3, 4)]
+    return [base_size * m for m in (1, 2, 3, 4, 5)]
 
 def save_multires(field, coeff, out_path, base_size: int):
     sizes = default_multiscales(base_size)

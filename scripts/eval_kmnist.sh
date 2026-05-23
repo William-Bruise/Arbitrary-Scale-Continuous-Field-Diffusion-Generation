@@ -1,1 +1,1 @@
-MPLBACKEND=Agg python -m src.eval --ckpt runs/kmnist/checkpoints/final.pt --dataset kmnist --data-root ./data --train-size 28 --ood-sizes 56,84,112 --num-samples 1024 --clf-epochs 2 --outdir runs/kmnist/eval
+MPLBACKEND=Agg python -m src.eval --ckpt runs/kmnist/checkpoints/final.pt --dataset kmnist --data-root ./data --train-size 28 --ood-sizes 56,84,112,140 --num-samples 1024 --clf-epochs 2 --outdir runs/kmnist/eval
