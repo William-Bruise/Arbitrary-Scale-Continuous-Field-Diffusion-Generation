@@ -43,7 +43,7 @@ def main():
     p.add_argument('--epochs',type=int,default=10); p.add_argument('--batch-size',type=int,default=128); p.add_argument('--lr',type=float,default=1e-4); p.add_argument('--weight-decay',type=float,default=0.01)
     p.add_argument('--timesteps',type=int,default=200); p.add_argument('--num-basis',type=int,default=144); p.add_argument('--sigma',type=float,default=0.08)
     p.add_argument('--device',default='auto', help='auto|cpu|cuda|cuda:0'); p.add_argument('--outdir',default='runs/full_train'); p.add_argument('--sample-every',type=int,default=10000)
-    p.add_argument('--ckpt-every',type=int,default=10000); p.add_argument('--num-workers',type=int,default=2); p.add_argument('--unet-base',type=int,default=64)
+    p.add_argument('--ckpt-every',type=int,default=10000); p.add_argument('--num-workers',type=int,default=2); p.add_argument('--unet-base',type=int,default=64); p.add_argument('--unet-levels',type=int,default=2); p.add_argument('--resblocks-per-level',type=int,default=2)
     p.add_argument('--normalize-coeffs',action='store_true'); p.add_argument('--stats-batches',type=int,default=100); p.add_argument('--scheduler',default='cosine',choices=['none','cosine'])
     args=p.parse_args()
     if args.device == 'auto':
@@ -53,7 +53,7 @@ def main():
     ds=make_dataset(args.dataset,args.data_root,True,args.image_size); dl=DataLoader(ds,batch_size=args.batch_size,shuffle=True,num_workers=args.num_workers,drop_last=True)
     sample_x,_=next(iter(dl)); channels=sample_x.shape[1]
     field=ContinuousGaussianField(args.num_basis,args.sigma,channels,args.device).to(args.device)
-    model=LatentUNetDenoiser(args.num_basis,channels,args.unet_base).to(args.device)
+    model=LatentUNetDenoiser(args.num_basis,channels,args.unet_base,levels=args.unet_levels,resblocks_per_level=args.resblocks_per_level).to(args.device)
     diff=DDPMCoefficients(args.timesteps,device=args.device); opt=torch.optim.AdamW(model.parameters(),lr=args.lr,weight_decay=args.weight_decay)
     total_steps=max(1,args.epochs*len(dl))
     sched=torch.optim.lr_scheduler.CosineAnnealingLR(opt,T_max=total_steps) if args.scheduler=='cosine' else None
@@ -77,7 +77,7 @@ def main():
           with open(f"{args.outdir}/samples/step_{step}_meta.txt","w",encoding="utf-8") as mf:
             mf.write(f"base_size={args.image_size}\nchannels={channels}\nscales={default_multiscales(args.image_size)}\npath={sample_path}\n")
         if step%args.ckpt_every==0:
-          torch.save({'model':model.state_dict(),'epoch':e,'steps':step,'dataset':args.dataset,'image_size':args.image_size,'channels':channels,'num_basis':args.num_basis,'sigma':args.sigma,'unet_base':args.unet_base,'timesteps':args.timesteps,'normalize_coeffs':args.normalize_coeffs,'coeff_mean':mean.cpu(),'coeff_std':std.cpu()},f"{args.outdir}/checkpoints/step_{step}.pt")
-    torch.save({'model':model.state_dict(),'epoch':args.epochs,'steps':step,'dataset':args.dataset,'image_size':args.image_size,'channels':channels,'num_basis':args.num_basis,'sigma':args.sigma,'unet_base':args.unet_base,'timesteps':args.timesteps,'normalize_coeffs':args.normalize_coeffs,'coeff_mean':mean.cpu(),'coeff_std':std.cpu()},f"{args.outdir}/checkpoints/final.pt")
+          torch.save({'model':model.state_dict(),'epoch':e,'steps':step,'dataset':args.dataset,'image_size':args.image_size,'channels':channels,'num_basis':args.num_basis,'sigma':args.sigma,'unet_base':args.unet_base,'unet_levels':args.unet_levels,'resblocks_per_level':args.resblocks_per_level,'timesteps':args.timesteps,'normalize_coeffs':args.normalize_coeffs,'coeff_mean':mean.cpu(),'coeff_std':std.cpu()},f"{args.outdir}/checkpoints/step_{step}.pt")
+    torch.save({'model':model.state_dict(),'epoch':args.epochs,'steps':step,'dataset':args.dataset,'image_size':args.image_size,'channels':channels,'num_basis':args.num_basis,'sigma':args.sigma,'unet_base':args.unet_base,'unet_levels':args.unet_levels,'resblocks_per_level':args.resblocks_per_level,'timesteps':args.timesteps,'normalize_coeffs':args.normalize_coeffs,'coeff_mean':mean.cpu(),'coeff_std':std.cpu()},f"{args.outdir}/checkpoints/final.pt")
 
 if __name__=='__main__': main()

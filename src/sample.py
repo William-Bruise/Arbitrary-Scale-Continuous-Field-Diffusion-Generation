@@ -28,7 +28,7 @@ def main():
     os.makedirs(a.outdir,exist_ok=True); ck=torch.load(a.ckpt,map_location=a.device)
     ch=ck.get('channels',1); k=ck['num_basis']; base_size=ck.get('image_size',28)
     field=ContinuousGaussianField(k,ck.get('sigma',0.08),ch,a.device).to(a.device)
-    model=LatentUNetDenoiser(k,ch,ck.get('unet_base',64)).to(a.device); model.load_state_dict(ck['model']); model.eval()
+    model=LatentUNetDenoiser(k,ch,ck.get('unet_base',64),levels=ck.get('unet_levels',2),resblocks_per_level=ck.get('resblocks_per_level',2)).to(a.device); model.load_state_dict(ck['model']); model.eval()
     diff=DDPMCoefficients(ck['timesteps'],device=a.device)
     coeff=diff.sample(model,1,ch*k,a.device)
     if ck.get('normalize_coeffs',False): coeff=coeff*ck['coeff_std'].to(a.device).unsqueeze(0)+ck['coeff_mean'].to(a.device).unsqueeze(0)
