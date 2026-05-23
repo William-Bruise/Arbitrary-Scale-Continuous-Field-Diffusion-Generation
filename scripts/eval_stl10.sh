@@ -1,0 +1,1 @@
+MPLBACKEND=Agg python -m src.eval --ckpt runs/stl10/checkpoints/final.pt --dataset stl10 --data-root ./data --train-size 64 --ood-sizes 128,192,256 --num-samples 1024 --clf-epochs 2 --outdir runs/stl10/eval

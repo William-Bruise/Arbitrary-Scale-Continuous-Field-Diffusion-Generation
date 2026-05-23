@@ -1,0 +1,1 @@
+MPLBACKEND=Agg python -m src.eval --ckpt runs/cifar10/checkpoints/final.pt --dataset cifar10 --data-root ./data --train-size 32 --ood-sizes 64,96,128 --num-samples 1024 --clf-epochs 2 --outdir runs/cifar10/eval
