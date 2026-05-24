@@ -7,6 +7,7 @@ class DDPMCoefficients:
         self.betas = torch.linspace(beta_start, beta_end, timesteps, device=device)
         self.alphas = 1.0 - self.betas
         self.alpha_bars = torch.cumprod(self.alphas, dim=0)
+        self.alpha_bars_prev = torch.cat([torch.ones(1, device=device), self.alpha_bars[:-1]], dim=0)
 
     def q_sample(self, x0: torch.Tensor, t: torch.Tensor, noise: torch.Tensor):
         a_bar = self.alpha_bars[t].unsqueeze(1)
@@ -23,7 +24,9 @@ class DDPMCoefficients:
         mean = (1 / torch.sqrt(alpha_t)) * (x_t - (beta_t / torch.sqrt(1 - a_bar_t)) * eps_theta)
         if t_scalar > 0:
             z = torch.randn_like(x_t)
-            sigma = torch.sqrt(beta_t)
+            a_bar_prev = self.alpha_bars_prev[t].unsqueeze(1)
+            posterior_var = beta_t * (1 - a_bar_prev) / (1 - a_bar_t)
+            sigma = torch.sqrt(posterior_var.clamp_min(1e-20))
             return mean + sigma * z
         return mean
 

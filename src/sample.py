@@ -8,7 +8,10 @@ def default_multiscales(base_size: int):
 
 def save_multires(field, coeff, out_path, base_size: int):
     sizes = default_multiscales(base_size)
-    imgs=[field.render(coeff,s,s)[0].detach().cpu() for s in sizes]
+    imgs=[]
+    with torch.no_grad():
+        for s in sizes:
+            imgs.append(field.render(coeff,s,s)[0].detach().cpu())
     fig,axes=plt.subplots(1,len(sizes),figsize=(4*len(sizes),4))
     if len(sizes)==1: axes=[axes]
     for ax,im,s in zip(axes,imgs,sizes):
@@ -27,7 +30,7 @@ def main():
     p=argparse.ArgumentParser(); p.add_argument('--ckpt',required=True); p.add_argument('--outdir',default='runs/sample'); p.add_argument('--device',default='cpu'); a=p.parse_args()
     os.makedirs(a.outdir,exist_ok=True); ck=torch.load(a.ckpt,map_location=a.device)
     ch=ck.get('channels',1); k=ck['num_basis']; base_size=ck.get('image_size',28)
-    field=ContinuousGaussianField(k,ck.get('sigma',0.06),ch,gaussian_channels=ck.get('gaussian_channels',ch),device=a.device).to(a.device)
+    field=ContinuousGaussianField(k,ck.get('sigma',0.06),ch,gaussian_channels=ck.get('gaussian_channels',ch),trainable_basis=not ck.get('fixed_basis', False),normalize_basis=ck.get('basis_norm', True),device=a.device).to(a.device)
     model=LatentUNetDenoiser(k,ch,ck.get('unet_base',64),levels=ck.get('unet_levels',2),resblocks_per_level=ck.get('resblocks_per_level',2)).to(a.device); model.load_state_dict(ck['model']); model.eval()
     diff=DDPMCoefficients(ck['timesteps'],device=a.device)
     coeff=diff.sample(model,1,ch*k,a.device)
