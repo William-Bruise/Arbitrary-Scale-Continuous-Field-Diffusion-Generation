@@ -41,7 +41,7 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument('--dataset',default='mnist'); p.add_argument('--data-root',default='./data'); p.add_argument('--image-size',type=int,default=32)
     p.add_argument('--epochs',type=int,default=10); p.add_argument('--batch-size',type=int,default=128); p.add_argument('--lr',type=float,default=1e-4); p.add_argument('--weight-decay',type=float,default=0.01)
-    p.add_argument('--timesteps',type=int,default=1000); p.add_argument('--num-basis',type=int,default=256); p.add_argument('--sigma',type=float,default=0.06); p.add_argument('--gaussian-channels',type=int,default=-1); p.add_argument('--fixed-basis',action='store_true')
+    p.add_argument('--timesteps',type=int,default=1000); p.add_argument('--num-basis',type=int,default=256); p.add_argument('--sigma',type=float,default=0.06); p.add_argument('--gaussian-channels',type=int,default=-1); p.add_argument('--fixed-basis',action='store_true'); p.add_argument('--no-basis-norm',action='store_true')
     p.add_argument('--device',default='auto', help='auto|cpu|cuda|cuda:0'); p.add_argument('--outdir',default='runs/full_train'); p.add_argument('--sample-every',type=int,default=10000)
     p.add_argument('--ckpt-every',type=int,default=10000); p.add_argument('--num-workers',type=int,default=2); p.add_argument('--unet-base',type=int,default=64); p.add_argument('--unet-levels',type=int,default=2); p.add_argument('--resblocks-per-level',type=int,default=2)
     p.add_argument('--normalize-coeffs',action='store_true'); p.add_argument('--stats-batches',type=int,default=100); p.add_argument('--scheduler',default='cosine',choices=['none','cosine'])
@@ -53,7 +53,7 @@ def main():
     ds=make_dataset(args.dataset,args.data_root,True,args.image_size); dl=DataLoader(ds,batch_size=args.batch_size,shuffle=True,num_workers=args.num_workers,drop_last=True)
     sample_x,_=next(iter(dl)); channels=sample_x.shape[1]
     gch = channels if args.gaussian_channels < 0 else args.gaussian_channels
-    field=ContinuousGaussianField(args.num_basis,args.sigma,channels,gaussian_channels=gch,trainable_basis=not args.fixed_basis,device=args.device).to(args.device)
+    field=ContinuousGaussianField(args.num_basis,args.sigma,channels,gaussian_channels=gch,trainable_basis=not args.fixed_basis,normalize_basis=not args.no_basis_norm,device=args.device).to(args.device)
     model=LatentUNetDenoiser(args.num_basis,channels,args.unet_base,levels=args.unet_levels,resblocks_per_level=args.resblocks_per_level).to(args.device)
     diff=DDPMCoefficients(args.timesteps,device=args.device); opt=torch.optim.AdamW(model.parameters(),lr=args.lr,weight_decay=args.weight_decay)
     total_steps=max(1,args.epochs*len(dl))

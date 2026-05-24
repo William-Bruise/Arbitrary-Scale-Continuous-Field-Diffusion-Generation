@@ -22,6 +22,7 @@ class ContinuousGaussianField(nn.Module):
         gaussian_channels: int | None = None,
         coarse_size: int | None = None,
         trainable_basis: bool = True,
+        normalize_basis: bool = True,
         device=None,
     ):
         super().__init__()
@@ -38,6 +39,7 @@ class ContinuousGaussianField(nn.Module):
         self.num_basis = num_basis
         self.gaussian_channels = channels if gaussian_channels is None else max(0, min(channels, gaussian_channels))
         self.coarse_size = side if coarse_size is None else coarse_size
+        self.normalize_basis = normalize_basis
 
         sx = torch.full((num_basis,), float(sigma), device=device)
         sy = torch.full((num_basis,), float(sigma), device=device)
@@ -78,6 +80,8 @@ class ContinuousGaussianField(nn.Module):
         if coords.dim() == 2:
             coords = coords.unsqueeze(0).expand(coeffs.shape[0], -1, -1)
         phi = self.basis(coords)
+        if self.normalize_basis:
+            phi = phi / (phi.sum(dim=-1, keepdim=True).clamp_min(1e-6))
         return torch.einsum("bnk,bck->bcn", phi, coeffs)
 
     def render(self, coeffs: torch.Tensor, h: int, w: int) -> torch.Tensor:
