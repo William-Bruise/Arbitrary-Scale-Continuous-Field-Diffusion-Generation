@@ -10,7 +10,11 @@ def default_multiscales(base_size: int):
 
 def save_multires(field, coeff, out_path, base_size: int):
     sizes = default_multiscales(base_size)
-    imgs=[field.render(coeff,s,s)[0].detach().cpu() for s in sizes]  # list of [C,H,W]
+    imgs=[]
+    with torch.no_grad():
+      for s in sizes:
+        img = field.render(coeff, s, s)[0].detach().cpu()
+        imgs.append(img)
     fig,axes=plt.subplots(1,len(sizes),figsize=(4*len(sizes),4))
     if len(sizes)==1: axes=[axes]
     for ax,im,s in zip(axes,imgs,sizes):

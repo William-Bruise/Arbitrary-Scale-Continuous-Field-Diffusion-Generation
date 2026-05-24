@@ -84,7 +84,7 @@ class ContinuousGaussianField(nn.Module):
             phi = phi / (phi.sum(dim=-1, keepdim=True).clamp_min(1e-6))
         return torch.einsum("bnk,bck->bcn", phi, coeffs)
 
-    def render(self, coeffs: torch.Tensor, h: int, w: int) -> torch.Tensor:
+    def render(self, coeffs: torch.Tensor, h: int, w: int, max_points_per_query: int = 65536) -> torch.Tensor:
         b, c, k = coeffs.shape
         assert k == self.num_basis
         out = []
@@ -94,7 +94,13 @@ class ContinuousGaussianField(nn.Module):
             xs = torch.linspace(-1.0, 1.0, w, device=coeffs.device)
             yy, xx = torch.meshgrid(ys, xs, indexing="ij")
             coords = torch.stack([xx, yy], dim=-1).reshape(-1, 2)
-            gvals = self.query(coeffs[:, : self.gaussian_channels, :], coords)
+            gc = coeffs[:, : self.gaussian_channels, :]
+            n = coords.shape[0]
+            chunks = []
+            for st in range(0, n, max_points_per_query):
+                ed = min(n, st + max_points_per_query)
+                chunks.append(self.query(gc, coords[st:ed]))
+            gvals = torch.cat(chunks, dim=-1)
             out.append(gvals.reshape(b, self.gaussian_channels, h, w))
 
         if c > self.gaussian_channels:
